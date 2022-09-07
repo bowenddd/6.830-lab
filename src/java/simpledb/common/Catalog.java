@@ -23,12 +23,24 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public class Catalog {
 
+    // User defined member variable
+
+    private Map<String,Integer>dbNameToIdMap;
+    private Map<Integer,String>dbIdToNameMap;
+    private Map<Integer,DbFile>dbIdToFileMap;
+    private Map<Integer,String>dbIdToPkeyMap;
+
+
     /**
      * Constructor.
      * Creates a new, empty catalog.
      */
     public Catalog() {
         // some code goes here
+        this.dbNameToIdMap = new HashMap<>();
+        this.dbIdToNameMap = new HashMap<>();
+        this.dbIdToFileMap = new HashMap<>();
+        this.dbIdToPkeyMap = new HashMap<>();
     }
 
     /**
@@ -42,6 +54,11 @@ public class Catalog {
      */
     public void addTable(DbFile file, String name, String pkeyField) {
         // some code goes here
+        int fileId = file.getId();
+        this.dbNameToIdMap.put(name,fileId);
+        this.dbIdToNameMap.put(fileId,name);
+        this.dbIdToFileMap.put(fileId,file);
+        this.dbIdToPkeyMap.put(fileId,pkeyField);
     }
 
     public void addTable(DbFile file, String name) {
@@ -65,7 +82,11 @@ public class Catalog {
      */
     public int getTableId(String name) throws NoSuchElementException {
         // some code goes here
-        return 0;
+        Integer id = this.dbNameToIdMap.get(name);
+        if(id == null){
+            throw new NoSuchElementException();
+        }
+        return id;
     }
 
     /**
@@ -76,7 +97,7 @@ public class Catalog {
      */
     public TupleDesc getTupleDesc(int tableid) throws NoSuchElementException {
         // some code goes here
-        return null;
+        return this.getDatabaseFile(tableid).getTupleDesc();
     }
 
     /**
@@ -87,27 +108,35 @@ public class Catalog {
      */
     public DbFile getDatabaseFile(int tableid) throws NoSuchElementException {
         // some code goes here
-        return null;
+        DbFile dbFile = this.dbIdToFileMap.get(tableid);
+        if(dbFile == null){
+            throw new NoSuchElementException();
+        }
+        return dbFile;
     }
 
     public String getPrimaryKey(int tableid) {
         // some code goes here
-        return null;
+        return this.dbIdToPkeyMap.get(tableid);
     }
 
     public Iterator<Integer> tableIdIterator() {
         // some code goes here
-        return null;
+        return this.dbIdToNameMap.keySet().iterator();
     }
 
     public String getTableName(int id) {
         // some code goes here
-        return null;
+        return this.dbIdToNameMap.get(id);
     }
     
     /** Delete all tables from the catalog */
     public void clear() {
         // some code goes here
+        this.dbIdToNameMap.clear();
+        this.dbNameToIdMap.clear();
+        this.dbIdToFileMap.clear();
+        this.dbIdToPkeyMap.clear();
     }
     
     /**

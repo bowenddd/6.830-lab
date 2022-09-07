@@ -12,6 +12,9 @@
 TupleDesc类定义了一个元组中所有属性的基本信息，Tuple类根据TupleDesc类的定义中
 定义的信息为元组中的每一个元素赋值
 
+TupleDesc类中的信息对一个表来说也是至关重要的
+
 ⚠️注意：在重写equlas方法后也要重写hashCode方法，因为如果不重写
 hashCode方法有可能导致两个相同的Object得到不同的hashCode，这样
 在使用Map的时候有可能导致key重复的情况
+
