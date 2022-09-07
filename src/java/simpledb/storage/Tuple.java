@@ -105,6 +105,10 @@ public class Tuple implements Serializable {
         return sb.toString();
     }
 
+    private Field[] getFields(){
+        return this.fields;
+    }
+
     /**
      * @return
      *        An iterator which iterates over all the fields of this tuple
@@ -112,7 +116,7 @@ public class Tuple implements Serializable {
     public Iterator<Field> fields()
     {
         // some code goes here
-        return Arrays.stream(this.fields).iterator();
+        return Arrays.stream(this.getFields()).iterator();
     }
 
     /**
