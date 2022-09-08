@@ -1,15 +1,18 @@
 package simpledb.storage;
 
-import simpledb.common.Database;
-import simpledb.common.Permissions;
-import simpledb.common.DbException;
-import simpledb.common.DeadlockException;
+import simpledb.common.*;
 import simpledb.transaction.TransactionAbortedException;
 import simpledb.transaction.TransactionId;
 
 import java.io.*;
 
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
  * BufferPool manages the reading and writing of pages into memory from
@@ -33,6 +36,22 @@ public class BufferPool {
     constructor instead. */
     public static final int DEFAULT_PAGES = 50;
 
+
+    // User defined member variable
+
+    private TransactionId txId;
+
+    private ReentrantLock txLock;
+
+    private Map<PageId,ReentrantReadWriteLock> pagesRWLockMap;
+
+    private int numPages;
+
+    private int pageCount;
+
+    private Map<PageId,Page> pagesMap;
+
+
     /**
      * Creates a BufferPool that caches up to numPages pages.
      *
@@ -40,6 +59,14 @@ public class BufferPool {
      */
     public BufferPool(int numPages) {
         // some code goes here
+        this.numPages = DEFAULT_PAGES;
+        if (numPages >= 0){
+            this.numPages = numPages;
+        }
+        this.txLock = new ReentrantLock();
+        this.pagesRWLockMap =  new HashMap<>();
+        this.pageCount = 0;
+        this.pagesMap = new HashMap<>();
     }
     
     public static int getPageSize() {
@@ -74,7 +101,66 @@ public class BufferPool {
     public  Page getPage(TransactionId tid, PageId pid, Permissions perm)
         throws TransactionAbortedException, DbException {
         // some code goes here
-        return null;
+        if(tid == null){
+            throw new TransactionAbortedException();
+        }
+        //现在需要做的判断是，如果当前的txId与请求的txId相同则不需要加锁
+        if(!tid.equals(this.txId)){
+            this.txLock.lock();
+            // 拿到锁说明当前的事务已经执行完成，因此更新当前的txId
+            this.txId = tid;
+        }
+        // 先查找bufferPool中是否有所需的page，如果有直接返回，
+        // 否则从disk导入page，并将page导入bufferPool中
+        Page page = this.getPageFromBufferPool(pid);
+        if (page == null){
+            page = this.getPageFromDisk(pid);
+        }
+        // 从pageLockMap中根据pageId获得对应的锁，如果没有就new一个新的锁
+        ReentrantReadWriteLock lock = this.pagesRWLockMap.get(pid);
+        if(lock == null){
+            lock = new ReentrantReadWriteLock();
+            this.pagesRWLockMap.put(pid,lock);
+        }
+        // 获得了page之后需要根据请求中的权限加相应的读写锁
+        if(perm.equals(Permissions.READ_ONLY)){
+            lock.readLock().lock();
+        }else if(perm.equals(Permissions.READ_WRITE)){
+            lock.writeLock().lock();
+        }
+        return page;
+    }
+
+
+    private Page getPageFromBufferPool(PageId pageId) {
+        return this.pagesMap.get(pageId);
+    }
+
+    private Page getPageFromDisk(PageId pageId) throws TransactionAbortedException,DbException {
+        // 迭代的从所有数据库中的元信息(catalog)中根据pageId找所需的page
+        Catalog catalog = Database.getCatalog();
+        Iterator<Integer> tableIdIterator = catalog.tableIdIterator();
+        Page page;
+        while(tableIdIterator.hasNext()){
+            int tableId = tableIdIterator.next();
+            try {
+                page = catalog.getDatabaseFile(tableId).readPage(pageId);
+                if(page != null){
+                    loadPageToBufferPool(pageId,page);
+                    return page;
+                }
+            }catch (IllegalArgumentException ignored){
+            }
+        }
+        throw new TransactionAbortedException();
+    }
+
+    private void loadPageToBufferPool(PageId pageId,Page page) throws DbException {
+        if(this.pageCount == this.numPages){
+            throw new DbException("BufferPool capacity is full");
+        }
+        this.pagesMap.put(pageId,page);
+        ++this.pageCount;
     }
 
     /**
