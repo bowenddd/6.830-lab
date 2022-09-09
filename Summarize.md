@@ -52,4 +52,35 @@ page的锁。
 
 如果某个元组对应的位为1，则表示该元组有效；如果为 0，则元组无效（例如，已被删除或从未初始化。）
 
+每个page的组织形式是 header(bitmap) + slots
+
+每个page中slots的数量的计算公式是：
+
+_tuples per page_ = floor((_page size_ * 8) / (_tuple size_ * 8 + 1))
+
+_page size_ 表示页面的大小
+
+_tuple size_ 表示一个元组的大小
+
+得到slots后我们可以计算header中bitmap的大小
+
+headerBytes = ceiling(tupsPerPage/8)
+
+这里的tupsPerPage为上面计算得到的_tuples per page_
+
+⚠️注意：由于Java采用的是大端的方式进行存储，对于每一个byte，低位地址存放的是
+一个字节的最高位，因此对于header中的bitmap来说，第一个byte的最高位表示第7个slot是否
+为空，第一个byte的最低位表示第0个slot是否为空
+
+我们在判断某一位是否为1时可以通过移位运算和位与运算实现，比如我们想要判断某个byte的第i位（从小到大）
+是否为1，我们可以通过以下代码实现：
+```java
+
+    if((byte)((b >> p) & 0x1)==1){
+        ...
+    }
+
+```
+
+### Exercise 5
 
