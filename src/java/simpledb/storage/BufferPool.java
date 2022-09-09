@@ -136,21 +136,15 @@ public class BufferPool {
         return this.pagesMap.get(pageId);
     }
 
-    private Page getPageFromDisk(PageId pageId) throws TransactionAbortedException,DbException {
-        // 迭代的从所有数据库中的元信息(catalog)中根据pageId找所需的page
+    private Page getPageFromDisk(PageId pageId)
+            throws TransactionAbortedException,DbException, IllegalArgumentException {
+        // 根据pageId，拿到tableId，然后再去找对应的page
         Catalog catalog = Database.getCatalog();
-        Iterator<Integer> tableIdIterator = catalog.tableIdIterator();
-        Page page;
-        while(tableIdIterator.hasNext()){
-            int tableId = tableIdIterator.next();
-            try {
-                page = catalog.getDatabaseFile(tableId).readPage(pageId);
-                if(page != null){
-                    loadPageToBufferPool(pageId,page);
-                    return page;
-                }
-            }catch (IllegalArgumentException ignored){
-            }
+        int tableId = pageId.getTableId();
+        Page page = catalog.getDatabaseFile(tableId).readPage(pageId);
+        if(page != null){
+            loadPageToBufferPool(pageId,page);
+            return page;
         }
         throw new TransactionAbortedException();
     }
