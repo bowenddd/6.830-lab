@@ -27,20 +27,6 @@ public class HeapPage implements Page {
 
     byte[] oldData;
     private final Byte oldDataLock= (byte) 0;
-
-    // User defined variable
-    // 0001 0010 0011 0100
-    // 0101 0110 0111 1000
-    // 1001 1010 1011 1100
-    // 1101 1110 1111 0000
-
-    private static final int[] byteZeroNum = new int[]{
-            4, 3, 3, 2,
-            3, 2, 2, 1,
-            3, 2, 2, 1,
-            2, 1, 1, 0
-    };
-
     /**
      * Create a HeapPage from a set of bytes of data read from disk.
      * The format of a HeapPage is a set of header bytes indicating

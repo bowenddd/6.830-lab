@@ -84,3 +84,18 @@ headerBytes = ceiling(tupsPerPage/8)
 
 ### Exercise 5
 
+该部分实现HeapFile类，一个HeapFile存储一个数据库表中的所有数据。
+
+在SimpleDB中，一个HeapFile由一组HeapPage组成。同时一个HeapFile关联
+一个在磁盘中存储的文件以及一个TupleDesc对象。
+
+在该部分我们要实现根据tableId和pageId即HeapPageId来实现随机访问一个HeapPage，
+这是通过FileInputStream实现的
+
+同时我们还要自定一个一个HeapFileIterator类，并让它实现DbFileIterator。该迭代器使用
+BufferPool中的getPage方法从磁盘中读取page，并将page导入到bufferPool中，同时返回一个
+HeapPage中所有的Tuple
+
+
+
+
