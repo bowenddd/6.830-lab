@@ -91,9 +91,11 @@ public class HeapFile implements DbFile {
         byte[] data = new byte[pageSize];
         try {
             FileInputStream fin = new FileInputStream(this.getFile());
-            fin.read(data,offset, pageSize);
+            fin.skip(offset);
+            fin.read(data);
             return new HeapPage(new HeapPageId(pid.getTableId(),pid.getPageNumber()),data);
         } catch (Exception ignored) {
+            ignored.printStackTrace();
             throw new IllegalArgumentException();
         }
     }
@@ -153,13 +155,14 @@ class HeapFileIterator extends AbstractDbFileIterator {
     public HeapFileIterator(HeapFile f, TransactionId tid) {
         this.f = f;
         this.tid = tid;
-        this.pageNo = 0;
+        this.pageNo = this.f.numPages();
     }
 
     /**
      * Open this iterator by getting an iterator on the first heap page
      */
     public void open() throws DbException, TransactionAbortedException {
+        this.pageNo = 0;
         HeapPage heapPage = (HeapPage) Database.getBufferPool().getPage(this.tid, new HeapPageId(this.f.getId(), this.pageNo), Permissions.READ_ONLY);
         it = heapPage.iterator();
     }
