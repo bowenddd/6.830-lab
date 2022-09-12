@@ -114,8 +114,11 @@ public class TupleDesc implements Serializable {
      */
     public String getFieldName(int i) throws NoSuchElementException {
         // some code goes here
-        if (i < 0 || i > this.numFields() || this.tdItems[i] == null || this.tdItems[i].fieldName == null){
+        if (i < 0 || i > this.numFields() || this.tdItems[i] == null){
             throw new NoSuchElementException();
+        }
+        if (this.tdItems[i].fieldName == null){
+            return "null";
         }
         return this.tdItems[i].fieldName;
     }

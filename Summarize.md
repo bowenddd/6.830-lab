@@ -96,6 +96,47 @@ headerBytes = ceiling(tupsPerPage/8)
 BufferPool中的getPage方法从磁盘中读取page，并将page导入到bufferPool中，同时返回一个
 HeapPage中所有的Tuple
 
+## Lab2
+
+### Exercise 1
+
+这一部分实现数据库查询中的JOIN和Filter两个操作
+
+在实现这两个操作之前首先要实现这两个操作的判别器(Predicate和JoinPredicate)
+
+所谓判别器就是判断两个元组中的某个属性（Integer或String）的大于、小于、等于等关系
+
+在Predicate中传入要判别第几个属性、判别的类型(Op枚举类)、以及要对比的右边的值
+
+比如对于(name,age)这个元组，我们要实现 
+ 
+```sql
+    SELECT * FROM USER WHERE age > 18
+```
+
+那么我们需要
+```java
+Predicate p = new Predicate(1,GREATER,50(Field))
+```
+之后再调用Predicate.filter(Field field)方法，传入一个属性
+与之比较即可
+
+而在JoinPredicate中是对两个元组中的属性进行比较，因此我们直接传入两个不同的属性以及判别的类型即可。
+
+完成判别器之后我们可以使用判别器来实现Filter和Join操作
+
+Filter使用在SELECT ...  WHERE 中，主要是对不符合条件的元组进行过滤
+
+在Filter中我们根据WHERE子句的条件构造一个判别器，然后传入一个元组的迭代器
+然后迭代访问每一个元组，通过判别器进行判断，如果符合要求则返回。
+Filter也是一个迭代器。
+
+而对JOIN来说，它使用在 SELECT ... FROM ... JOIN ON... WHERE ...
+需要将不同的表根据条件连接起来。
+
+⚠️注意：使用JOIN返回一个新的类型的Tuple，它的TupleDesc包含两个表中的内容
+
+我们可以通过迭代访问两个表中的元组实现JOIN操作，时间复杂度O(n^2)
 
 
 
