@@ -138,5 +138,16 @@ Filter也是一个迭代器。
 
 我们可以通过迭代访问两个表中的元组实现JOIN操作，时间复杂度O(n^2)
 
+### Exercise 2
 
+这一部分是实现 GROUP BY 和 一些常见的聚合(Aggregator)函数，比如
+SUM、MAX、MIN、COUNT等。
 
+其思路是按一个field分组，并对另一个field执行相关的聚合操作。
+显然我们可以使用Map这一数据结构来实现，用分组的field作为key，用
+执行聚合的field作为value。
+
+在Aggregate类中，我们传入一个child迭代器，这个迭代器中包含了所有
+我们需要聚类以及聚合的元组，然后我们根据聚类的field的类型new一个相对应
+的类型的aggreator进行聚合，然后得到一个结果的迭代器，用这个迭代器返回
+聚合得到的结果。
