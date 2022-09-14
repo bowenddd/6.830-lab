@@ -194,10 +194,12 @@ public class Aggregate extends Operator {
                 this.aggregator = new StringAggregator(gfield,gtype,afield,aop);
             }
         }
+        this.child.open();
         while(this.child.hasNext()){
             Tuple tuple = this.child.next();
             this.aggregator.mergeTupleIntoGroup(tuple);
         }
+        this.child.close();
         this.resultIterator = this.aggregator.iterator();
     }
 

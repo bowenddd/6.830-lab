@@ -6,9 +6,7 @@ import simpledb.transaction.TransactionId;
 
 import java.io.*;
 
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
@@ -51,6 +49,8 @@ public class BufferPool {
 
     private Map<PageId,Page> pagesMap;
 
+    private Map<TransactionId,Set<PageId>> dirtyPageMap;
+
 
     /**
      * Creates a BufferPool that caches up to numPages pages.
@@ -67,6 +67,7 @@ public class BufferPool {
         this.pagesRWLockMap =  new HashMap<>();
         this.pageCount = 0;
         this.pagesMap = new HashMap<>();
+        this.dirtyPageMap = new HashMap<>();
     }
     
     public static int getPageSize() {
@@ -219,6 +220,15 @@ public class BufferPool {
         throws DbException, IOException, TransactionAbortedException {
         // some code goes here
         // not necessary for lab1
+        HeapFile file = (HeapFile) Database.getCatalog().getDatabaseFile(tableId);
+        List<Page> pages = file.insertTuple(tid, t);
+        for(Page page :pages){
+            page.markDirty(true,tid);
+            this.pagesMap.put(page.getId(),page);
+            Set<PageId> pageIdSet = this.dirtyPageMap.getOrDefault(tid, new HashSet<>());
+            pageIdSet.add(page.getId());
+            this.dirtyPageMap.put(tid,pageIdSet);
+        }
     }
 
     /**
@@ -238,6 +248,16 @@ public class BufferPool {
         throws DbException, IOException, TransactionAbortedException {
         // some code goes here
         // not necessary for lab1
+        int tableId = t.getRecordId().getPageId().getTableId();
+        HeapFile file = (HeapFile) Database.getCatalog().getDatabaseFile(tableId);
+        ArrayList<Page> pages = file.deleteTuple(tid, t);
+        for(Page page : pages){
+            page.markDirty(true,tid);
+            this.pagesMap.put(page.getId(),page);
+            Set<PageId> pageIdSet = this.dirtyPageMap.getOrDefault(tid, new HashSet<>());
+            pageIdSet.add(page.getId());
+            this.dirtyPageMap.put(tid,pageIdSet);
+        }
     }
 
     /**
