@@ -277,7 +277,6 @@ public class HeapPage implements Page {
     public void insertTuple(Tuple t) throws DbException {
         // some code goes here
         // not necessary for lab1
-        int tupleNumber = t.getRecordId().getTupleNumber();
         if(this.getNumEmptySlots() == 0 || !t.getTupleDesc().equals(this.td)){
             throw new DbException("insert tuple failed");
         }

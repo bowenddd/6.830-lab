@@ -181,4 +181,10 @@ page，同时对修改后的page进行标记，将其标记为dirty。然后再�
   方法，注意在bufferpool中要将修改后的page进行更新，同时记录事务和dirty page的映射关系，以便将
   对buffer pool的修改在之后刷回到disk中
 
+### Exercise 4
+
+这一部分是实现执行器中的Delete和Insert方法。在构造函数中会
+传入一个child的Tuple迭代器，每次调用BufferPool中的insert和
+delete方法将迭代器中的tuple进行插入或删除。完成之后返回一个Tuple，
+这个Tuple只有一个Field，就是本次操作的记录的数量。
 
