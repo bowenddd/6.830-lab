@@ -7,8 +7,6 @@ import simpledb.transaction.TransactionId;
 import java.io.*;
 
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
@@ -47,9 +45,13 @@ public class BufferPool {
 
     private int pageCount;
 
-    private Map<PageId,Page> pagesMap;
+    private Map<PageId,Node<Page>> pagesMap;
 
-    private Map<TransactionId,Set<PageId>> dirtyPageMap;
+    private Map<TransactionId,Set<PageId>> dirtyPageIdMap;
+
+    private LinkedList<Page> list;
+
+    private Map<PageId,Page> dirtyPageMap;
 
 
     /**
@@ -68,6 +70,8 @@ public class BufferPool {
         this.pageCount = 0;
         this.pagesMap = new HashMap<>();
         this.dirtyPageMap = new HashMap<>();
+        this.list = new LinkedList<>(null,null,0,numPages);
+        this.dirtyPageIdMap = new HashMap<>();
     }
     
     public static int getPageSize() {
@@ -99,8 +103,8 @@ public class BufferPool {
      * @param pid the ID of the requested page
      * @param perm the requested permissions on the page
      */
-    public  Page getPage(TransactionId tid, PageId pid, Permissions perm)
-        throws TransactionAbortedException, DbException, IllegalArgumentException{
+    public Page getPage(TransactionId tid, PageId pid, Permissions perm)
+            throws TransactionAbortedException, DbException, IllegalArgumentException{
         // some code goes here
         if(tid == null){
             throw new TransactionAbortedException();
@@ -133,12 +137,18 @@ public class BufferPool {
     }
 
 
-    private Page getPageFromBufferPool(PageId pageId) {
-        return this.pagesMap.get(pageId);
+    private synchronized Page getPageFromBufferPool(PageId pageId) {
+        Node<Page> node = this.pagesMap.get(pageId);
+        if(node == null){
+            return null;
+        }
+        this.list.remove(node);
+        this.list.add(node);
+        return node.getData();
     }
 
     private Page getPageFromDisk(PageId pageId)
-            throws TransactionAbortedException,DbException, IllegalArgumentException {
+            throws TransactionAbortedException, DbException, IllegalArgumentException{
         // 根据pageId，拿到tableId，然后再去找对应的page
         Catalog catalog = Database.getCatalog();
         int tableId = pageId.getTableId();
@@ -150,11 +160,13 @@ public class BufferPool {
         throw new TransactionAbortedException();
     }
 
-    private void loadPageToBufferPool(PageId pageId,Page page) throws DbException {
+    private synchronized void loadPageToBufferPool(PageId pageId,Page page) throws DbException {
         if(this.pageCount == this.numPages){
-            throw new DbException("BufferPool capacity is full");
+            this.evictPage();
         }
-        this.pagesMap.put(pageId,page);
+        Node node = new Node(page,null,null);
+        this.list.add(node);
+        this.pagesMap.put(pageId,node);
         ++this.pageCount;
     }
 
@@ -224,12 +236,14 @@ public class BufferPool {
         List<Page> pages = file.insertTuple(tid, t);
         for(Page page :pages){
             page.markDirty(true,tid);
-            this.pagesMap.put(page.getId(),page);
-            Set<PageId> pageIdSet = this.dirtyPageMap.getOrDefault(tid, new HashSet<>());
+            this.addOrUpdatePage(page);
+            Set<PageId> pageIdSet = this.dirtyPageIdMap.getOrDefault(tid, new HashSet<>());
             pageIdSet.add(page.getId());
-            this.dirtyPageMap.put(tid,pageIdSet);
+            this.dirtyPageIdMap.put(tid,pageIdSet);
+            this.dirtyPageMap.put(page.getId(),page);
         }
     }
+
 
     /**
      * Remove the specified tuple from the buffer pool.
@@ -253,11 +267,23 @@ public class BufferPool {
         ArrayList<Page> pages = file.deleteTuple(tid, t);
         for(Page page : pages){
             page.markDirty(true,tid);
-            this.pagesMap.put(page.getId(),page);
-            Set<PageId> pageIdSet = this.dirtyPageMap.getOrDefault(tid, new HashSet<>());
+            this.addOrUpdatePage(page);
+            Set<PageId> pageIdSet = this.dirtyPageIdMap.getOrDefault(tid, new HashSet<>());
             pageIdSet.add(page.getId());
-            this.dirtyPageMap.put(tid,pageIdSet);
+            this.dirtyPageIdMap.put(tid,pageIdSet);
+            this.dirtyPageMap.put(page.getId(),page);
         }
+    }
+
+    private void addOrUpdatePage(Page page) throws DbException, IOException {
+        Node<Page> node = this.pagesMap.get(page.getId());
+        if(node == null){
+            this.loadPageToBufferPool(page.getId(),page);
+            return;
+        }
+        node.setData(page);
+        this.list.remove(node);
+        this.list.add(node);
     }
 
     /**
@@ -268,6 +294,10 @@ public class BufferPool {
     public synchronized void flushAllPages() throws IOException {
         // some code goes here
         // not necessary for lab1
+        Set<PageId> set = this.dirtyPageMap.keySet();
+        for(PageId pid : set){
+            this.flushPage(pid);
+        }
 
     }
 
@@ -282,6 +312,11 @@ public class BufferPool {
     public synchronized void discardPage(PageId pid) {
         // some code goes here
         // not necessary for lab1
+        Node<Page> pageNode = this.pagesMap.get(pid);
+        if(pageNode != null){
+            this.list.remove(pageNode);
+        }
+        this.dirtyPageMap.remove(pid);
     }
 
     /**
@@ -291,6 +326,13 @@ public class BufferPool {
     private synchronized  void flushPage(PageId pid) throws IOException {
         // some code goes here
         // not necessary for lab1
+        int tableId = pid.getTableId();
+        HeapFile file = (HeapFile) Database.getCatalog().getDatabaseFile(tableId);
+        Page page = this.dirtyPageMap.get(pid);
+        if(page != null){
+            file.writePage(page);
+        }
+        this.dirtyPageMap.remove(pid);
     }
 
     /** Write all pages of the specified transaction to disk.
@@ -304,9 +346,92 @@ public class BufferPool {
      * Discards a page from the buffer pool.
      * Flushes the page to disk to ensure dirty pages are updated on disk.
      */
-    private synchronized  void evictPage() throws DbException {
+    private synchronized  void evictPage() throws DbException{
         // some code goes here
         // not necessary for lab1
+        Node<Page> node = this.list.back;
+        this.list.remove(node);
+        this.pagesMap.remove(node.getData().getId());
+        --this.pageCount;
+        try {
+            this.flushPage(node.getData().getId());
+        }catch (IOException e){
+            throw new DbException("write page to disk error");
+        }
     }
 
+}
+
+class LinkedList <T> {
+    Node<T> front;
+    Node<T> back;
+    int length;
+    int size;
+
+    public LinkedList(Node<T> front, Node<T> back, int length, int size) {
+        this.front = front;
+        this.back = back;
+        this.length = length;
+        this.size = size;
+    }
+
+    public Node<T> getFront() {
+        return front;
+    }
+
+    public Node<T> getBack() {
+        return back;
+    }
+
+    public int getLength() {
+        return length;
+    }
+
+    public void add(Node<T> node){
+        node.next = front;
+        node.prev = null;
+        if(this.front == null){
+            this.front = node;
+            this.back = node;
+        }
+        this.length++;
+    }
+
+    public void remove(Node<T> node){
+        if(this.front == this.back){
+            this.front = null;
+            this.back = null;
+            this.length = 0;
+            return;
+        }
+        if(node.equals(this.front)){
+            this.front = node.next;
+        }else if(node.equals(this.back)){
+            this.back = node.prev;
+            this.back.next = null;
+        }else{
+            node.prev.next = node.next;
+        }
+        this.length--;
+    }
+}
+
+class Node<T>{
+    T data;
+    Node<T> next;
+    Node<T> prev;
+
+    public Node(T data, Node<T> next, Node<T> prev) {
+        this.data = data;
+        this.next = next;
+        this.prev = prev;
+    }
+
+    public T getData() {
+        return data;
+    }
+
+    public void setData(T data) {
+        this.data = data;
+    }
 }

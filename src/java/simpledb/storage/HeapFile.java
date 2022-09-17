@@ -205,7 +205,7 @@ public class HeapFile implements DbFile {
         // not necessary for lab1
     }
 
-    private PageId findEmptyPage(TransactionId tid) throws TransactionAbortedException, DbException {
+    private PageId findEmptyPage(TransactionId tid) throws TransactionAbortedException, DbException, IOException {
         for(int i = 0 ; i < this.numPages() ; i++){
             PageId pid = new HeapPageId(this.getId(),i);
             HeapPage page = (HeapPage) Database.getBufferPool().getPage(tid,pid,Permissions.READ_ONLY);
@@ -218,7 +218,7 @@ public class HeapFile implements DbFile {
 
     // see DbFile.java for javadocs
     public ArrayList<Page> deleteTuple(TransactionId tid, Tuple t) throws DbException,
-            TransactionAbortedException {
+            TransactionAbortedException, IOException {
         // some code goes here
         // TODO: 此处权限应该是READ_WRITE,由于BuffPool未完全实现，故暂设为READ_ONLY
         HeapPage page = (HeapPage) Database.getBufferPool().getPage(tid, t.getRecordId().getPageId(), Permissions.READ_ONLY);
@@ -257,7 +257,7 @@ class HeapFileIterator extends AbstractDbFileIterator {
     /**
      * Open this iterator by getting an iterator on the first heap page
      */
-    public void open() throws DbException, TransactionAbortedException {
+    public void open() throws DbException, TransactionAbortedException{
         this.pageNo = 0;
         HeapPage heapPage = (HeapPage) Database.getBufferPool().getPage(this.tid, new HeapPageId(this.f.getId(), this.pageNo), Permissions.READ_ONLY);
         it = heapPage.iterator();
@@ -275,6 +275,7 @@ class HeapFileIterator extends AbstractDbFileIterator {
             it = null;
         }
         while((it == null || !it.hasNext())&& this.pageNo < this.f.numPages() - 1){
+
             HeapPage heapPage = (HeapPage) Database.getBufferPool().getPage(this.tid, new HeapPageId(this.f.getId(), ++this.pageNo), Permissions.READ_ONLY);
             it = heapPage.iterator();
         }
