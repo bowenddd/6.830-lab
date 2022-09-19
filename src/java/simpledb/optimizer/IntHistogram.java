@@ -1,10 +1,27 @@
 package simpledb.optimizer;
 
+import simpledb.execution.Operator;
 import simpledb.execution.Predicate;
 
 /** A class to represent a fixed-width histogram over a single integer-based field.
  */
 public class IntHistogram {
+
+    // User defined variable
+    private int buckets;
+
+    private int min;
+
+    private int max;
+
+    private double []bucketRange;
+
+    private int []counts;
+
+    private int []groups;
+
+    private int tupCounts;
+
 
     /**
      * Create a new IntHistogram.
@@ -24,6 +41,29 @@ public class IntHistogram {
      */
     public IntHistogram(int buckets, int min, int max) {
     	// some code goes here
+        this.buckets = buckets;
+        this.min = min;
+        this.max = max;
+        this.counts = new int[buckets];
+        this.bucketRange = new double[buckets];
+        this.groups = new int[max-min+1];
+        this.tupCounts = 0;
+        double rangVal = (double)(max-min+1)/buckets;
+        for(int i = 0 ; i < buckets ; i++){
+            this.bucketRange[i] = (i+1)*rangVal+min;
+        }
+        for(int i = min ; i <= max ; i++){
+            this.groups[i-min] = getGroup(i);
+        }
+    }
+
+    private int getGroup(int v){
+        for(int i = 0 ; i < this.buckets ; i++){
+            if (v < this.bucketRange[i]){
+                return i;
+            }
+        }
+        return this.buckets-1;
     }
 
     /**
@@ -32,6 +72,9 @@ public class IntHistogram {
      */
     public void addValue(int v) {
     	// some code goes here
+        int group = this.groups[v-min];
+        this.counts[group]++;
+        this.tupCounts++;
     }
 
     /**
@@ -47,7 +90,74 @@ public class IntHistogram {
     public double estimateSelectivity(Predicate.Op op, int v) {
 
     	// some code goes here
+        if(zeroProb(op,v)){
+            return 0.0;
+        }
+        if(oneProb(op,v)){
+            return 1.0;
+        }
+        int group = this.groups[v-min];
+        double right = this.bucketRange[group];
+        double left = group == 0 ? this.min : this.bucketRange[group-1];
+        if(Predicate.Op.NOT_EQUALS.equals(op)){
+            return 1-this.counts[group]/(right-left)/this.tupCounts;
+        }
+        if(Predicate.Op.EQUALS.equals(op)){
+            return this.counts[group]/(right-left)/this.tupCounts;
+        }
+        if(Predicate.Op.GREATER_THAN.equals(op)||Predicate.Op.GREATER_THAN_OR_EQ.equals(op)){
+            double res = 0;
+            int tups = 0;
+            res +=(right-v)/(right-left)*this.counts[group]/this.tupCounts;
+            if (right-v < 1e-10){
+                res += (right-left)*this.counts[group]/this.tupCounts;
+            }
+            for(int i = group+1; i < this.buckets ; i++){
+                tups += this.counts[i];
+            }
+            res += (double)tups/this.tupCounts;
+            return res;
+        }
+        if(Predicate.Op.LESS_THAN.equals(op)||Predicate.Op.LESS_THAN_OR_EQ.equals(op)){
+            double res = 0;
+            int tups = 0;
+            res += (v-left)/(right-left)*this.counts[group]/this.tupCounts;
+            if (v - left < 1e-10){
+                res += (right-left)*this.counts[group]/this.tupCounts;
+            }
+            for(int i = group-1; i >=0 ; i--){
+                tups += this.counts[i];
+            }
+            res += (double)tups/this.tupCounts;
+            return res;
+        }
         return -1.0;
+    }
+
+    private boolean zeroProb(Predicate.Op op, int v){
+        if ((Predicate.Op.LESS_THAN.equals(op)||Predicate.Op.LESS_THAN_OR_EQ.equals(op))
+                && v <= min){
+            return true;
+        }
+        if((Predicate.Op.GREATER_THAN.equals(op)||Predicate.Op.GREATER_THAN_OR_EQ.equals(op))
+                && v >= max){
+            return true;
+        }
+        return false;
+    }
+    private boolean oneProb(Predicate.Op op, int v){
+        if ((Predicate.Op.LESS_THAN.equals(op)||Predicate.Op.LESS_THAN_OR_EQ.equals(op))
+                && v >= max){
+            return true;
+        }
+        if((Predicate.Op.GREATER_THAN.equals(op)||Predicate.Op.GREATER_THAN_OR_EQ.equals(op))
+                && v <= min){
+            return true;
+        }
+        if(Predicate.Op.NOT_EQUALS.equals(op) && (v < min || v > max)){
+            return true;
+        }
+        return false;
     }
     
     /**
@@ -69,6 +179,7 @@ public class IntHistogram {
      */
     public String toString() {
         // some code goes here
-        return null;
+        return String.format("Information of This IntHistogram:\n" +
+                "min %d, max: %d buckets %d\n",min,max,buckets);
     }
 }
