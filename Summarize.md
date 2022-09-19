@@ -257,7 +257,7 @@ Thus, bucket b contributes (b_f x b_part)
 
 这些边界情况都需要额外处理。
 
-### Exercise 3
+### Exercise 2
 
 这一部分是实现表中相关信息的统计。
 
@@ -273,3 +273,20 @@ Thus, bucket b contributes (b_f x b_part)
 - estimateSelectivity：首先我们要这个表所有的tuple进行遍历
 对每个属性根据其Type建立一个统计直方图，然后把每个元组中的每个属性放到
 放到直方图中进行统计即可
+
+
+### Exercise 3
+
+这一部分对Join操作的Cost(花费)和基数(Join操作后元组的个数)进行统计
+
+需要实现两个方法
+
+- estimateJoinCost(LogicalJoinNode j, int card1, int card2, double cost1, double cost2)：
+这个方法计算JOIN操作的花费，计算的公式为：
+joincost(t1 join t2) = scancost(t1) + ntups(t1) x scancost(t2) //IO cost+ ntups(t1) x ntups(t2)  //CPU cost
+
+- estimateJoinCardinality(LogicalJoinNode j, int card1, int card2, boolean t1pkey, boolean t2pkey)：
+这个方法计算JOIN操作的计数，计算的规则如下：
+  - 如果不是等值操作，那么基数为 (int)(card1*card2*0.3)
+  - 如果是等值操作，且两个表JOIN的属性都不是主键，那么基数为card1+card2
+  - 如果有主键，那么基数等于非主键的card
