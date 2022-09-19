@@ -1,11 +1,15 @@
 package simpledb.optimizer;
 
+import com.sun.org.apache.xml.internal.security.utils.resolver.implementations.ResolverXPointer;
 import simpledb.common.Database;
+import simpledb.common.DbException;
 import simpledb.common.Type;
 import simpledb.execution.Predicate;
 import simpledb.execution.SeqScan;
 import simpledb.storage.*;
 import simpledb.transaction.Transaction;
+import simpledb.transaction.TransactionAbortedException;
+import simpledb.transaction.TransactionId;
 
 import java.util.HashMap;
 import java.util.Iterator;
@@ -68,6 +72,22 @@ public class TableStats {
      */
     static final int NUM_HIST_BINS = 100;
 
+    // User defined variable
+
+    private int tableId;
+
+    private int ioCostPrePage;
+
+    private int numPages;
+
+    private int totalTups;
+
+    private Map<Integer,IntHistogram> intFieldHistMap;
+
+    private Map<Integer,StringHistogram> strFieldHistMap;
+
+    private TupleDesc td;
+
     /**
      * Create a new TableStats object, that keeps track of statistics on each
      * column of a table
@@ -87,6 +107,47 @@ public class TableStats {
         // necessarily have to (for example) do everything
         // in a single scan of the table.
         // some code goes here
+        this.tableId = tableid;
+        this.ioCostPrePage = ioCostPerPage;
+        this.intFieldHistMap = new HashMap<>();
+        this.strFieldHistMap = new HashMap<>();
+        try {
+            this.execStats();
+        } catch (TransactionAbortedException | DbException e) {
+            e.printStackTrace();
+        }
+
+    }
+
+    private void execStats() throws TransactionAbortedException, DbException {
+        HeapFile file = (HeapFile) Database.getCatalog().getDatabaseFile(this.tableId);
+        this.numPages = file.numPages();
+        DbFileIterator iterator = file.iterator(new TransactionId());
+        this.totalTups = 0;
+        iterator.open();
+        this.td = file.getTupleDesc();
+        for(int i = 0 ; i < td.numFields() ; i++){
+            Type t = td.getFieldType(i);
+            if(t.equals(Type.INT_TYPE)){
+                this.intFieldHistMap.put(i,new IntHistogram(100,0,100));
+            }else{
+                this.strFieldHistMap.put(i,new StringHistogram(100));
+            }
+        }
+        while(iterator.hasNext()){
+            Tuple tuple = iterator.next();
+            for(int i = 0 ; i < td.numFields() ; i++){
+                Type t = td.getFieldType(i);
+                if(t.equals(Type.INT_TYPE)){
+                    IntHistogram intHistogram = this.intFieldHistMap.get(i);
+                    intHistogram.addValue(((IntField)tuple.getField(i)).getValue());
+                }else{
+                    StringHistogram stringHistogram = this.strFieldHistMap.get(i);
+                    stringHistogram.addValue(tuple.getField(i).toString());
+                }
+            }
+            this.totalTups++;
+        }
     }
 
     /**
@@ -103,7 +164,7 @@ public class TableStats {
      */
     public double estimateScanCost() {
         // some code goes here
-        return 0;
+        return this.numPages*this.ioCostPrePage;
     }
 
     /**
@@ -117,7 +178,7 @@ public class TableStats {
      */
     public int estimateTableCardinality(double selectivityFactor) {
         // some code goes here
-        return 0;
+        return (int) (this.totalTups*selectivityFactor);
     }
 
     /**
@@ -132,7 +193,13 @@ public class TableStats {
      * */
     public double avgSelectivity(int field, Predicate.Op op) {
         // some code goes here
-        return 1.0;
+        Type type = this.td.getFieldType(field);
+        if(type.equals(Type.INT_TYPE)){
+            IntHistogram intHistogram = this.intFieldHistMap.get(field);
+            return intHistogram.estimateSelectivity(op,0);
+        }
+        StringHistogram stringHistogram = this.strFieldHistMap.get(field);
+        return stringHistogram.estimateSelectivity(op,"mmmm");
     }
 
     /**
@@ -150,7 +217,13 @@ public class TableStats {
      */
     public double estimateSelectivity(int field, Predicate.Op op, Field constant) {
         // some code goes here
-        return 1.0;
+        Type type = this.td.getFieldType(field);
+        if(type.equals(Type.INT_TYPE)){
+            IntHistogram intHistogram = this.intFieldHistMap.get(field);
+            return intHistogram.estimateSelectivity(op,((IntField)constant).getValue());
+        }
+        StringHistogram stringHistogram = this.strFieldHistMap.get(field);
+        return stringHistogram.estimateSelectivity(op,constant.toString());
     }
 
     /**
@@ -158,7 +231,7 @@ public class TableStats {
      * */
     public int totalTuples() {
         // some code goes here
-        return 0;
+        return this.totalTups;
     }
 
 }

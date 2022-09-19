@@ -256,3 +256,20 @@ Thus, bucket b contributes (b_f x b_part)
 比如输入的数在桶的边界上
 
 这些边界情况都需要额外处理。
+
+### Exercise 3
+
+这一部分是实现表中相关信息的统计。
+
+有一个Map，维护了所有的表的统计信息
+
+对每一个表而言，它的统计信息有
+- estimateScanCost： 扫描这个表的所有Page所消耗的IO的
+时间，对于扫描每一个Page而言，这里假设每个Page的IO的时间是一个常数
+因此实际上我们只需要拿到这个表有多少个page就可以了，其次我们还需要
+
+- estimateTableCardinality：拿到这个表中所有元组的数量，然后乘
+一个因子即可。
+- estimateSelectivity：首先我们要这个表所有的tuple进行遍历
+对每个属性根据其Type建立一个统计直方图，然后把每个元组中的每个属性放到
+放到直方图中进行统计即可

@@ -109,7 +109,7 @@ public class IntHistogram {
             double res = 0;
             int tups = 0;
             res +=(right-v)/(right-left)*this.counts[group]/this.tupCounts;
-            if (right-v < 1e-10){
+            if (right-v < 1e-5){
                 res += (right-left)*this.counts[group]/this.tupCounts;
             }
             for(int i = group+1; i < this.buckets ; i++){
@@ -122,7 +122,7 @@ public class IntHistogram {
             double res = 0;
             int tups = 0;
             res += (v-left)/(right-left)*this.counts[group]/this.tupCounts;
-            if (v - left < 1e-10){
+            if (v - left < 1e-5){
                 res += (right-left)*this.counts[group]/this.tupCounts;
             }
             for(int i = group-1; i >=0 ; i--){
@@ -141,6 +141,9 @@ public class IntHistogram {
         }
         if((Predicate.Op.GREATER_THAN.equals(op)||Predicate.Op.GREATER_THAN_OR_EQ.equals(op))
                 && v >= max){
+            return true;
+        }
+        if(Predicate.Op.EQUALS.equals(op) && (v < min || v > max)){
             return true;
         }
         return false;
