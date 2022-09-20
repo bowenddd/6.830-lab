@@ -129,7 +129,7 @@ public class TableStats {
         for(int i = 0 ; i < td.numFields() ; i++){
             Type t = td.getFieldType(i);
             if(t.equals(Type.INT_TYPE)){
-                this.intFieldHistMap.put(i,new IntHistogram(100,0,100));
+                this.intFieldHistMap.put(i,new IntHistogram(10000,0,Integer.MAX_VALUE-10));
             }else{
                 this.strFieldHistMap.put(i,new StringHistogram(100));
             }

@@ -290,3 +290,30 @@ joincost(t1 join t2) = scancost(t1) + ntups(t1) x scancost(t2) //IO cost+ ntups(
   - 如果不是等值操作，那么基数为 (int)(card1*card2*0.3)
   - 如果是等值操作，且两个表JOIN的属性都不是主键，那么基数为card1+card2
   - 如果有主键，那么基数等于非主键的card
+  
+
+### Exercise 4
+
+这一部分是实现 Selinger 优化器，通过这个优化器来构建JOIN
+操作是执行计划(执行顺序)
+
+我们需要实现  List<LogicalJoinNode> orderJoins(Map<String, TableStats> stats,
+Map<String, Double> filterSelectivities,  
+boolean explain)方法
+
+算法的伪代码如下：
+```text
+1. j = set of join nodes
+2. for (i in 1...|j|):
+3.     for s in {all length i subsets of j}
+4.       bestPlan = {}
+5.       for s' in {all length d-1 subsets of s}
+6.            subplan = optjoin(s')
+7.            plan = best way to join (s-s') to subplan
+8.            if (cost(plan) < cost(bestPlan))
+9.               bestPlan = plan
+10.      optjoin(s) = bestPlan
+11. return optjoin(j)
+```
+需要注意的是，在我们获得bestPlan之后，我们需要手动将这个bestPlan
+的相关信息加入到planCache中去
