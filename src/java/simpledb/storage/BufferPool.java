@@ -166,7 +166,7 @@ public class BufferPool {
     }
 
     private synchronized void loadPageToBufferPool(PageId pageId,Page page) throws DbException {
-        if(this.pageCount == this.numPages){
+        if(this.list.getLength() == this.numPages){
             this.evictPage();
         }
         Node node = new Node(page,null,null);
@@ -202,10 +202,10 @@ public class BufferPool {
      *
      * @param tid the ID of the transaction requesting the unlock
      */
-    public void transactionComplete(TransactionId tid) {
+    public void transactionComplete(TransactionId tid){
         // some code goes here
         // not necessary for lab1|lab2
-        transactionComplete(tid,false);
+        transactionComplete(tid,true);
     }
 
     /** Return true if the specified transaction has a lock on the specified page */
@@ -219,6 +219,18 @@ public class BufferPool {
         return pageIds.contains(p);
     }
 
+    private void searchAndMarkDirtyPages(TransactionId tid){
+        List<Page> dataList = this.list.getDataList();
+        for(Page p : dataList){
+            if(tid.equals(p.isDirty())){
+                this.dirtyPageMap.put(p.getId(),p);
+            }
+            Set<PageId> pageIds = this.dirtyPageIdMap.getOrDefault(tid,new HashSet<>());
+            pageIds.add(p.getId());
+            this.dirtyPageIdMap.put(tid,pageIds);
+        }
+    }
+
     /**
      * Commit or abort a given transaction; release all locks associated to
      * the transaction.
@@ -226,13 +238,37 @@ public class BufferPool {
      * @param tid the ID of the transaction requesting the unlock
      * @param commit a flag indicating whether we should commit or abort
      */
-    public void transactionComplete(TransactionId tid, boolean commit) {
+    public void transactionComplete(TransactionId tid, boolean commit){
         // some code goes here
         // not necessary for lab1|lab2
+        this.searchAndMarkDirtyPages(tid);
+        if(commit){
+            this.flushPages(tid);
+        }else{
+            // 如果事务失败了，就把bufferpool中所有的脏的page替换为磁盘中的page
+            Set<PageId> pageIds = this.dirtyPageIdMap.get(tid);
+            for(PageId pid : pageIds){
+                Catalog catalog = Database.getCatalog();
+                int tableId = pid.getTableId();
+                Page page = catalog.getDatabaseFile(tableId).readPage(pid);
+                if(page != null){
+                    this.pagesMap.get(pid).setData(page);
+                    this.dirtyPageMap.remove(pid);
+                }else{
+                    System.out.println("read page from disk null!");
+                }
+            }
+            pageIds.clear();
+            this.dirtyPageIdMap.remove(tid);
+        }
         Set<PageId> pageIds = this.txPageLockMap.get(tid);
         for(PageId pageId:pageIds){
             LockManager manager = this.pageLockManagerMap.get(pageId);
-            manager.unlock();
+            try {
+                manager.unlock();
+            }catch (IllegalMonitorStateException e){
+                manager.resetLock();
+            }
             manager.setPermAndTransactionId(null,null);
         }
         pageIds.clear();
@@ -267,6 +303,7 @@ public class BufferPool {
             pageIdSet.add(page.getId());
             this.dirtyPageIdMap.put(tid,pageIdSet);
             this.dirtyPageMap.put(page.getId(),page);
+            System.out.println(this.dirtyPageIdMap.toString());
         }
     }
 
@@ -324,6 +361,8 @@ public class BufferPool {
         for(PageId pid : set){
             this.flushPage(pid);
         }
+        this.dirtyPageMap.clear();
+        this.dirtyPageIdMap.clear();
 
     }
 
@@ -363,9 +402,24 @@ public class BufferPool {
 
     /** Write all pages of the specified transaction to disk.
      */
-    public synchronized  void flushPages(TransactionId tid) throws IOException {
+    public synchronized  void flushPages(TransactionId tid)  {
         // some code goes here
         // not necessary for lab1|lab2
+        Set<PageId> pageIds = this.dirtyPageIdMap.get(tid);
+        if(pageIds == null){
+            return;
+        }
+        for(PageId pid : pageIds){
+            try {
+                this.flushPage(pid);
+            }catch (IOException e){
+                e.printStackTrace();
+            }
+            this.dirtyPageMap.remove(pid);
+        }
+        pageIds.clear();
+        this.dirtyPageIdMap.remove(tid);
+
     }
 
     /**
@@ -375,24 +429,39 @@ public class BufferPool {
     private synchronized  void evictPage() throws DbException{
         // some code goes here
         // not necessary for lab1
-        Node<Page> node = this.list.back;
+        Node<Page> node = this.findCleanNode();
+        if(node == null){
+            throw new DbException("no clean node found !");
+        }
         this.list.remove(node);
         this.pagesMap.remove(node.getData().getId());
         --this.pageCount;
-        try {
-            this.flushPage(node.getData().getId());
-        }catch (IOException e){
-            throw new DbException("write page to disk error");
+        //  因为不会驱逐脏页，因此无需刷新。
+        //  try {
+        //      this.flushPage(node.getData().getId());
+        //  }catch (IOException e){
+        //      throw new DbException("write page to disk error");
+        //  }
+    }
+
+    private Node<Page> findCleanNode(){
+        Node<Page> prev = this.list.getBack();
+        while(prev != null){
+            if(!this.dirtyPageMap.containsKey(prev.getData().getId())){
+                return prev;
+            }
+            prev = this.list.getPrevNode(prev);
         }
+        return null;
     }
 
 }
 
 class LinkedList <T> {
-    Node<T> front;
-    Node<T> back;
-    int length;
-    int size;
+    private Node<T> front;
+    private Node<T> back;
+    private int length;
+    private int size;
 
     public LinkedList(Node<T> front, Node<T> back, int length, int size) {
         this.front = front;
@@ -440,10 +509,28 @@ class LinkedList <T> {
         }
         this.length--;
     }
+
+    public Node<T> getPrevNode(Node<T> node){
+        return node.prev;
+    }
+
+    public List<T> getDataList(){
+        Node<T> p = this.getFront();
+        List<T> list = new ArrayList<>();
+        while(p != null){
+            if(p.getData()!=null){
+                list.add(p.getData());
+            }else{
+                System.out.printf("data is null\n");
+            }
+            p = p.next;
+        }
+        return list;
+    }
 }
 
 class Node<T>{
-    T data;
+    private T data;
     Node<T> next;
     Node<T> prev;
 
@@ -507,5 +594,9 @@ class LockManager{
         this.perm = Permissions.READ_WRITE;
         this.rwLock = new ReentrantReadWriteLock();
         this.rwLock.writeLock();
+    }
+
+    public void resetLock(){
+        this.rwLock = new ReentrantReadWriteLock();
     }
 }

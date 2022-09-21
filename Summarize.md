@@ -326,6 +326,7 @@ boolean explain)方法
 在这一部分简化对数据库的思考，认为事务或数据库在运行过程中不会出现故障
 因此在这一部分不需要考虑事务的回滚等操作，只需要保证事务的ACID特性即可
 
+### Exercise 1 2
 在这一部分锁的级别都是PageLock，不需要在表级别上进行加锁，因此，所有的锁
 的获取的操作都是在BufferPool中的getPage()方法中实现的。
 
@@ -363,3 +364,14 @@ Slot，说明同时有其他的事务创建了一个新的Page，那么它就无
 
 因此将逻辑改为在LockerManager类中新增一个lockUpgrade方法，在锁升级时，将LockerManager中
 Lock变量重新new一个，然后加排他锁同时将事务的权限更新为READ_WRITE
+
+### Exercise 3 4 
+Exercise 3 中需要对BufferPool的evictPage方法进行修改，在Lab4 之前，实现evictPage的逻辑是
+采用LRU策略从BufferPool保存的Page中选出一个Page，将其移出BufferPool，如果这个Page是脏页，
+还要对其进行刷新。
+而在Exercise中，evictPage方法不能将dirty的Page移除。因此在实现的时候要找一个clean的Page移出
+如果BufferPool中所有的Page都是脏页，那么抛出异常
+
+Exercise 4 实现transactionComplete()，当一个事务完成之后，需要对脏页进行刷新，也需要释放事务在
+执行中获取的锁。如果这个事务没有提交，应该丢弃事务对Page进行的修改。具体的做法是将BufferPool中的dirty
+page替换为从disk中获取的旧的Page。

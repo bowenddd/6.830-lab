@@ -77,7 +77,7 @@ public class TransactionTest extends TestUtil.CreateHeapFile {
 
     Tuple t = Utility.getHeapTuple(new int[] { 6, 830 });
     t.setRecordId(new RecordId(p2, 1));
-
+    System.out.println("start insert");
     p.insertTuple(t);
     p.markDirty(true, tid1);
     bp.transactionComplete(tid1, commit);
