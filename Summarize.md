@@ -375,3 +375,8 @@ Exercise 3 中需要对BufferPool的evictPage方法进行修改，在Lab4 之前
 Exercise 4 实现transactionComplete()，当一个事务完成之后，需要对脏页进行刷新，也需要释放事务在
 执行中获取的锁。如果这个事务没有提交，应该丢弃事务对Page进行的修改。具体的做法是将BufferPool中的dirty
 page替换为从disk中获取的旧的Page。
+
+### Exercise 5
+
+这一部分实现死锁检测，本来应该是通过检测环路来实现。
+偷懒用超时来做了 ：）

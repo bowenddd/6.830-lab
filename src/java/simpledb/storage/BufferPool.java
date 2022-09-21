@@ -6,7 +6,10 @@ import simpledb.transaction.TransactionId;
 
 import java.io.*;
 
+import java.sql.Time;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
@@ -35,21 +38,21 @@ public class BufferPool {
 
     // User defined member variable
 
-    private Map<PageId,LockManager> pageLockManagerMap;
+    private ConcurrentHashMap<PageId,LockManager> pageLockManagerMap;
 
-    private Map<TransactionId,Set<PageId>> txPageLockMap;
+    private ConcurrentHashMap<TransactionId,Set<PageId>> txPageLockMap;
 
     private int numPages;
 
     private int pageCount;
 
-    private Map<PageId,Node<Page>> pagesMap;
+    private ConcurrentHashMap<PageId,Node<Page>> pagesMap;
 
-    private Map<TransactionId,Set<PageId>> dirtyPageIdMap;
+    private ConcurrentHashMap<TransactionId,Set<PageId>> dirtyPageIdMap;
 
     private LinkedList<Page> list;
 
-    private Map<PageId,Page> dirtyPageMap;
+    private ConcurrentHashMap<PageId,Page> dirtyPageMap;
 
 
 
@@ -64,13 +67,13 @@ public class BufferPool {
         if (numPages >= 0){
             this.numPages = numPages;
         }
-        this.pageLockManagerMap =  new HashMap<>();
+        this.pageLockManagerMap =  new ConcurrentHashMap<>();
         this.pageCount = 0;
-        this.pagesMap = new HashMap<>();
-        this.dirtyPageMap = new HashMap<>();
+        this.pagesMap = new ConcurrentHashMap<>();
+        this.dirtyPageMap = new ConcurrentHashMap<>();
         this.list = new LinkedList<>(null,null,0,numPages);
-        this.dirtyPageIdMap = new HashMap<>();
-        this.txPageLockMap = new HashMap<>();
+        this.dirtyPageIdMap = new ConcurrentHashMap<>();
+        this.txPageLockMap = new ConcurrentHashMap<>();
     }
     
     public static int getPageSize() {
@@ -117,16 +120,24 @@ public class BufferPool {
         // 获得了page之后需要根据请求中的权限加相应的读写锁
         if(perm.equals(Permissions.READ_ONLY)){
             if(!(tid.equals(manager.getTid()) && (Permissions.READ_WRITE.equals(manager.getPerm())))){
-                manager.readLock();
+                try {
+                    manager.readLock();
+                }catch (InterruptedException e){
+                    throw new TransactionAbortedException();
+                }
             }
 
         }else if(perm.equals(Permissions.READ_WRITE)){
-            if(tid.equals(manager.getTid()) && (Permissions.READ_ONLY.equals(manager.getPerm()))){
-                manager.lockUpgrade();
-            }else{
-                manager.writeLock();
+            try {
+                if(tid.equals(manager.getTid()) && (Permissions.READ_ONLY.equals(manager.getPerm()))){
+                    manager.lockUpgrade();
+                }else{
+                    manager.writeLock();
+                }
+            }catch (InterruptedException e){
+                System.out.println("dead lock");
+                throw new TransactionAbortedException();
             }
-
         }
         manager.setPermAndTransactionId(perm,tid);
         // 先查找bufferPool中是否有所需的page，如果有直接返回，
@@ -261,7 +272,7 @@ public class BufferPool {
             pageIds.clear();
             this.dirtyPageIdMap.remove(tid);
         }
-        Set<PageId> pageIds = this.txPageLockMap.get(tid);
+        Set<PageId> pageIds = this.txPageLockMap.getOrDefault(tid,new HashSet<>());
         for(PageId pageId:pageIds){
             LockManager manager = this.pageLockManagerMap.get(pageId);
             try {
@@ -557,15 +568,31 @@ class LockManager{
 
     private TransactionId tid;
 
+    private final int OUTTIMES = 1000;
+
     public LockManager() {
         this.rwLock = new ReentrantReadWriteLock();
     }
 
-    public void readLock(){
+    public void readLock() throws InterruptedException {
+        long stime = System.currentTimeMillis();
+        while(!this.rwLock.readLock().tryLock()){
+            long curtime = System.currentTimeMillis();
+            if(curtime - stime > OUTTIMES){
+                throw new InterruptedException();
+            }
+        }
         this.rwLock.readLock().lock();
     }
 
-    public void writeLock(){
+    public void writeLock() throws InterruptedException {
+        long stime = System.currentTimeMillis();
+        while(!this.rwLock.writeLock().tryLock()){
+            long curtime = System.currentTimeMillis();
+            if(curtime - stime > OUTTIMES){
+                throw new InterruptedException();
+            }
+        }
         this.rwLock.writeLock().lock();
     }
 
@@ -590,10 +617,10 @@ class LockManager{
         }
     }
 
-    public void lockUpgrade(){
+    public void lockUpgrade() throws InterruptedException {
         this.perm = Permissions.READ_WRITE;
         this.rwLock = new ReentrantReadWriteLock();
-        this.rwLock.writeLock();
+        this.writeLock();
     }
 
     public void resetLock(){
