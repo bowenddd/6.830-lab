@@ -35,11 +35,9 @@ public class BufferPool {
 
     // User defined member variable
 
-    private TransactionId txId;
+    private Map<PageId,LockManager> pageLockManagerMap;
 
-    private ReentrantLock txLock;
-
-    private Map<PageId,ReentrantReadWriteLock> pagesRWLockMap;
+    private Map<TransactionId,Set<PageId>> txPageLockMap;
 
     private int numPages;
 
@@ -54,6 +52,7 @@ public class BufferPool {
     private Map<PageId,Page> dirtyPageMap;
 
 
+
     /**
      * Creates a BufferPool that caches up to numPages pages.
      *
@@ -65,13 +64,13 @@ public class BufferPool {
         if (numPages >= 0){
             this.numPages = numPages;
         }
-        this.txLock = new ReentrantLock();
-        this.pagesRWLockMap =  new HashMap<>();
+        this.pageLockManagerMap =  new HashMap<>();
         this.pageCount = 0;
         this.pagesMap = new HashMap<>();
         this.dirtyPageMap = new HashMap<>();
         this.list = new LinkedList<>(null,null,0,numPages);
         this.dirtyPageIdMap = new HashMap<>();
+        this.txPageLockMap = new HashMap<>();
     }
     
     public static int getPageSize() {
@@ -109,31 +108,36 @@ public class BufferPool {
         if(tid == null){
             throw new TransactionAbortedException();
         }
-        //现在需要做的判断是，如果当前的txId与请求的txId相同则不需要加锁
-        if(!tid.equals(this.txId)){
-            // TODO：这里如果加锁会导致LAB3 Exercise4 的测试过不了
-            //this.txLock.lock();
-            // 拿到锁说明当前的事务已经执行完成，因此更新当前的txId
-            this.txId = tid;
+        // 从pageLockMap中根据pageId获得对应的锁，如果没有就new一个新的锁
+        LockManager manager = this.pageLockManagerMap.get(pid);
+        if(manager == null){
+            manager = new LockManager();
+            this.pageLockManagerMap.put(pid,manager);
         }
+        // 获得了page之后需要根据请求中的权限加相应的读写锁
+        if(perm.equals(Permissions.READ_ONLY)){
+            if(!(tid.equals(manager.getTid()) && (Permissions.READ_WRITE.equals(manager.getPerm())))){
+                manager.readLock();
+            }
+
+        }else if(perm.equals(Permissions.READ_WRITE)){
+            if(tid.equals(manager.getTid()) && (Permissions.READ_ONLY.equals(manager.getPerm()))){
+                manager.lockUpgrade();
+            }else{
+                manager.writeLock();
+            }
+
+        }
+        manager.setPermAndTransactionId(perm,tid);
         // 先查找bufferPool中是否有所需的page，如果有直接返回，
         // 否则从disk导入page，并将page导入bufferPool中
         Page page = this.getPageFromBufferPool(pid);
         if (page == null){
             page = this.getPageFromDisk(pid);
         }
-        // 从pageLockMap中根据pageId获得对应的锁，如果没有就new一个新的锁
-        ReentrantReadWriteLock lock = this.pagesRWLockMap.get(pid);
-        if(lock == null){
-            lock = new ReentrantReadWriteLock();
-            this.pagesRWLockMap.put(pid,lock);
-        }
-        // 获得了page之后需要根据请求中的权限加相应的读写锁
-        if(perm.equals(Permissions.READ_ONLY)){
-            lock.readLock().lock();
-        }else if(perm.equals(Permissions.READ_WRITE)){
-            lock.writeLock().lock();
-        }
+        Set<PageId> pageIds = this.txPageLockMap.getOrDefault(tid, new HashSet<>());
+        pageIds.add(pid);
+        this.txPageLockMap.put(tid,pageIds);
         return page;
     }
 
@@ -183,6 +187,14 @@ public class BufferPool {
     public  void unsafeReleasePage(TransactionId tid, PageId pid) {
         // some code goes here
         // not necessary for lab1|lab2
+        Set<PageId> pageIds = this.txPageLockMap.get(tid);
+        if(pageIds == null || !pageIds.contains(pid)){
+            return;
+        }
+        LockManager manager = this.pageLockManagerMap.get(pid);
+        manager.unlock();
+        manager.setPermAndTransactionId(null,null);
+        pageIds.remove(pid);
     }
 
     /**
@@ -193,13 +205,18 @@ public class BufferPool {
     public void transactionComplete(TransactionId tid) {
         // some code goes here
         // not necessary for lab1|lab2
+        transactionComplete(tid,false);
     }
 
     /** Return true if the specified transaction has a lock on the specified page */
     public boolean holdsLock(TransactionId tid, PageId p) {
         // some code goes here
         // not necessary for lab1|lab2
-        return false;
+        Set<PageId> pageIds = this.txPageLockMap.get(tid);
+        if(pageIds == null){
+            return false;
+        }
+        return pageIds.contains(p);
     }
 
     /**
@@ -212,6 +229,14 @@ public class BufferPool {
     public void transactionComplete(TransactionId tid, boolean commit) {
         // some code goes here
         // not necessary for lab1|lab2
+        Set<PageId> pageIds = this.txPageLockMap.get(tid);
+        for(PageId pageId:pageIds){
+            LockManager manager = this.pageLockManagerMap.get(pageId);
+            manager.unlock();
+            manager.setPermAndTransactionId(null,null);
+        }
+        pageIds.clear();
+        this.txPageLockMap.remove(tid);
     }
 
     /**
@@ -434,5 +459,53 @@ class Node<T>{
 
     public void setData(T data) {
         this.data = data;
+    }
+}
+
+class LockManager{
+
+    private ReentrantReadWriteLock rwLock;
+
+    private Permissions perm;
+
+    private TransactionId tid;
+
+    public LockManager() {
+        this.rwLock = new ReentrantReadWriteLock();
+    }
+
+    public void readLock(){
+        this.rwLock.readLock().lock();
+    }
+
+    public void writeLock(){
+        this.rwLock.writeLock().lock();
+    }
+
+    public void setPermAndTransactionId(Permissions perm, TransactionId tid){
+        this.perm = perm;
+        this.tid = tid;
+    }
+
+    public TransactionId getTid(){
+        return this.tid;
+    }
+
+    public Permissions getPerm(){
+        return this.perm;
+    }
+
+    public void unlock(){
+        if(Permissions.READ_ONLY.equals(this.perm)){
+            this.rwLock.readLock().unlock();
+        }else if(Permissions.READ_WRITE.equals(this.perm)){
+            this.rwLock.writeLock().unlock();
+        }
+    }
+
+    public void lockUpgrade(){
+        this.perm = Permissions.READ_WRITE;
+        this.rwLock = new ReentrantReadWriteLock();
+        this.rwLock.writeLock();
     }
 }

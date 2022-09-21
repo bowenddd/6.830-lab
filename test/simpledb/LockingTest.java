@@ -29,17 +29,14 @@ public class LockingTest extends TestUtil.CreateHeapFile {
    */
   @Before public void setUp() throws Exception {
     super.setUp();
-
     // clear all state from the buffer pool
     bp = Database.resetBufferPool(BufferPool.DEFAULT_PAGES);
-
     // create a new empty HeapFile and populate it with three pages.
     // we should be able to add 504 tuples on an empty page.
     TransactionId tid = new TransactionId();
     for (int i = 0; i < 1025; ++i) {
       empty.insertTuple(tid, Utility.getHeapTuple(i, 2));
     }
-
     // if this fails, complain to the TA
     assertEquals(3, empty.numPages());
 
@@ -48,7 +45,6 @@ public class LockingTest extends TestUtil.CreateHeapFile {
       PageId p2 = new HeapPageId(empty.getId(), 2);
     this.tid1 = new TransactionId();
     this.tid2 = new TransactionId();
-
     // forget about locks associated to tid, so they don't conflict with
     // test cases
     bp.getPage(tid, p0, Permissions.READ_WRITE).markDirty(true, tid);
@@ -74,7 +70,6 @@ public class LockingTest extends TestUtil.CreateHeapFile {
       TransactionId tid1, PageId pid1, Permissions perm1,
       TransactionId tid2, PageId pid2, Permissions perm2,
       boolean expected) throws Exception {
-
     bp.getPage(tid1, pid1, perm1);
     grabLock(tid2, pid2, perm2, expected);
   }
@@ -91,10 +86,8 @@ public class LockingTest extends TestUtil.CreateHeapFile {
    */
   public void grabLock(TransactionId tid, PageId pid, Permissions perm,
       boolean expected) throws Exception {
-
     TestUtil.LockGrabber t = new TestUtil.LockGrabber(tid, pid, perm);
     t.start();
-
     // if we don't have the lock after TIMEOUT, we assume blocking.
     Thread.sleep(TIMEOUT);
     assertEquals(expected, t.acquired());

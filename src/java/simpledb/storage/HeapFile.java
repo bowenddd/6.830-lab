@@ -35,7 +35,7 @@ public class HeapFile implements DbFile {
 
     private TupleDesc td;
 
-    private Map<PageId, ReentrantReadWriteLock> pageRWLock;
+    //private Map<PageId, ReentrantReadWriteLock> pageRWLock;
 
     private Lock tableLock;
 
@@ -50,7 +50,7 @@ public class HeapFile implements DbFile {
         // some code goes here
         this.backedFile = f;
         this.td = td;
-        this.pageRWLock = new HashMap<>();
+        //this.pageRWLock = new HashMap<>();
         this.tableLock = new ReentrantLock();
     }
 
@@ -89,15 +89,15 @@ public class HeapFile implements DbFile {
         return this.td;
     }
 
-    private ReentrantReadWriteLock getPageRWLock(PageId pid){
-        ReentrantReadWriteLock lock =
-                this.pageRWLock.get(pid);
-        if(lock == null){
-            lock = new ReentrantReadWriteLock();
-            this.pageRWLock.put(pid,lock);
-        }
-        return lock;
-    }
+    //private ReentrantReadWriteLock getPageRWLock(PageId pid){
+    //    ReentrantReadWriteLock lock =
+    //            this.pageRWLock.get(pid);
+    //    if(lock == null){
+    //        lock = new ReentrantReadWriteLock();
+    //        this.pageRWLock.put(pid,lock);
+    //    }
+    //    return lock;
+    //}
 
     // see DbFile.java for javadocs
     public Page readPage(PageId pid) throws IllegalArgumentException {
@@ -105,7 +105,7 @@ public class HeapFile implements DbFile {
         if(pid.getTableId() != this.getId()){
             throw new IllegalArgumentException();
         }
-        ReentrantReadWriteLock lock = this.getPageRWLock(pid);
+        //ReentrantReadWriteLock lock = this.getPageRWLock(pid);
         int pageSize = BufferPool.getPageSize();
         int offset = pid.getPageNumber() * pageSize;
         if(this.getFile().length() < offset + pageSize){
@@ -114,7 +114,7 @@ public class HeapFile implements DbFile {
         byte[] data = new byte[pageSize];
         RandomAccessFile raf = null;
         try {
-            lock.readLock().lock();
+            //lock.readLock().lock();
             raf = new RandomAccessFile(this.getFile(),"r");
             raf.seek(offset);
             raf.read(data);
@@ -130,7 +130,7 @@ public class HeapFile implements DbFile {
 
                 }
             }
-            lock.readLock().unlock();
+            //lock.readLock().unlock();
         }
     }
 
@@ -143,11 +143,11 @@ public class HeapFile implements DbFile {
             throw new IllegalArgumentException();
         }
         int offset = pid.getPageNumber()*BufferPool.getPageSize();
-        ReentrantReadWriteLock lock = this.getPageRWLock(pid);
+        //ReentrantReadWriteLock lock = this.getPageRWLock(pid);
         byte[] data = page.getPageData();
         RandomAccessFile raf = null;
         try {
-            lock.writeLock().lock();
+            //lock.writeLock().lock();
             raf = new RandomAccessFile(this.getFile(),"rw");
             raf.seek(offset);
             raf.write(data);
@@ -158,7 +158,7 @@ public class HeapFile implements DbFile {
             if(raf != null){
                 raf.close();
             }
-            lock.writeLock().unlock();
+            //lock.writeLock().unlock();
         }
     }
 
@@ -193,8 +193,7 @@ public class HeapFile implements DbFile {
                 }
                 this.tableLock.unlock();
             }
-            // TODO: 此处权限应该是READ_WRITE,由于BuffPool未完全实现，故暂设为READ_ONLY
-            page = (HeapPage) Database.getBufferPool().getPage(tid,pid,Permissions.READ_ONLY);
+            page = (HeapPage) Database.getBufferPool().getPage(tid,pid,Permissions.READ_WRITE);
             if(page.getNumEmptySlots()==0){
                 continue;
             }
@@ -206,9 +205,10 @@ public class HeapFile implements DbFile {
     }
 
     private PageId findEmptyPage(TransactionId tid) throws TransactionAbortedException, DbException, IOException {
+        BufferPool bufferPool = Database.getBufferPool();
         for(int i = 0 ; i < this.numPages() ; i++){
             PageId pid = new HeapPageId(this.getId(),i);
-            HeapPage page = (HeapPage) Database.getBufferPool().getPage(tid,pid,Permissions.READ_ONLY);
+            HeapPage page = (HeapPage) bufferPool.getPage(tid,pid,Permissions.READ_ONLY);
             if(page.getNumEmptySlots()!=0){
                 return pid;
             }
@@ -220,8 +220,7 @@ public class HeapFile implements DbFile {
     public ArrayList<Page> deleteTuple(TransactionId tid, Tuple t) throws DbException,
             TransactionAbortedException, IOException {
         // some code goes here
-        // TODO: 此处权限应该是READ_WRITE,由于BuffPool未完全实现，故暂设为READ_ONLY
-        HeapPage page = (HeapPage) Database.getBufferPool().getPage(tid, t.getRecordId().getPageId(), Permissions.READ_ONLY);
+        HeapPage page = (HeapPage) Database.getBufferPool().getPage(tid, t.getRecordId().getPageId(), Permissions.READ_WRITE);
         page.deleteTuple(t);
         return new ArrayList<>(Arrays.asList((Page) page));
         // not necessary for lab1
