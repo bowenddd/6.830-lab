@@ -228,7 +228,7 @@ public class BTreeFile implements DbFile {
 
 	/**
 	 * Split a leaf page to make room for new tuples and recursively split the parent node
-	 * as needed to accommodate a new entry. The new entry should have a key matching the key field
+		 * as needed to accommodate a new entry. The new entry should have a key matching the key field
 	 * of the first tuple in the right-hand page (the key is "copied up"), and child pointers 
 	 * pointing to the two leaf pages resulting from the split.  Update sibling pointers and parent 
 	 * pointers as needed.  
@@ -257,7 +257,72 @@ public class BTreeFile implements DbFile {
 		// the new entry.  getParentWithEmtpySlots() will be useful here.  Don't forget to update
 		// the sibling pointers of all the affected leaf pages.  Return the page into which a 
 		// tuple with the given key field should be inserted.
-        return null;
+
+		// 说一下思路，首先拿到这个page最多的元组的个数，然后除2，得到要分到一个新的page的元组的个数
+		// 把要移动的元组从旧的page中删除，加入到新的page中。
+		// 更新旧元组和新元组的左右兄弟的指针
+		// 得到向索引节点插入的key
+		// 对比索引节点插入的key与要插入的新key，选择一个page插入这个新key
+		// 把这两个page放到dirtypage中
+		// 将要向索引节点插入的key插入到索引节点中，如果索引节点已满，要分裂索引节点。
+		// 下面是具体的代码
+
+		// 拿到这个page中tuple的数量
+		int numTuples = page.getNumTuples();
+		// 对移动了的tuple的数量进行统计
+		int moveCount = 0;
+		// 拿到这个page中所有的元组的反向迭代器，用于遍历移动
+		Iterator<Tuple> it = page.reverseIterator();
+		// 得到一个新的page
+		BTreeLeafPage newPage = (BTreeLeafPage) getEmptyPage(tid, dirtypages, BTreePageId.LEAF);
+		Tuple tuple = null;
+		while(it.hasNext() && moveCount < numTuples/2){
+			tuple = it.next();
+			// 从旧的page中删除这个tuple
+			page.deleteTuple(tuple);
+			// 将这个tuple移动到新的page中
+			newPage.insertTuple(tuple);
+			System.out.println(tuple.getField(keyField).toString());
+			moveCount++;
+		}
+		// 拿到要加入到索引节点的field
+		Field KField = tuple.getField(this.keyField);
+		// 更新两个page的兄弟节点指针
+		newPage.setLeftSiblingId(page.getId());
+		newPage.setRightSiblingId(page.getRightSiblingId());
+		page.setRightSiblingId(newPage.getId());
+		System.out.println(page.getRightSiblingId().toString());
+
+		// 将两个page加入到dirtypages中
+		dirtypages.put(page.getId(),page);
+		dirtypages.put(newPage.getId(),newPage);
+
+		// 将keyField插入到父节点(索引节点中)
+		BTreePageId parentId = page.getParentId();
+		BTreeInternalPage parentPage = getParentWithEmptySlots(tid,dirtypages,parentId,KField);
+
+		// 我们要在parentPage中遍历所有的entry，
+		// 找到指向该page的entry的下一个entry，然后将下一个entry的左孩子设为newPage
+		Iterator<BTreeEntry> parentIt = parentPage.iterator();
+		while(parentIt.hasNext()){
+			BTreeEntry entry = parentIt.next();
+			if(entry.getLeftChild().equals(page.getId())){
+				entry.setLeftChild(newPage.getId());
+				break;
+			}
+		}
+
+		BTreeEntry entry = new BTreeEntry(KField,page.getId(), newPage.getId());
+		parentPage.insertEntry(entry);
+
+		//更新两个leaf page的父节点
+		page.setParentId(parentPage.getId());
+		newPage.setParentId(parentPage.getId());
+		// 比较field与key field， 确定返回的page
+		if(field.compare(Op.LESS_THAN,KField)){
+			return page;
+		}
+		return newPage;
 		
 	}
 	
@@ -295,7 +360,41 @@ public class BTreeFile implements DbFile {
 		// the parent pointers of all the children moving to the new page.  updateParentPointers()
 		// will be useful here.  Return the page into which an entry with the given key field
 		// should be inserted.
-		return null;
+
+		int numEntries = page.getNumEntries();
+		int moveCount = 0;
+
+		Iterator<BTreeEntry> it = page.reverseIterator();
+
+		BTreeInternalPage newPage = (BTreeInternalPage) getEmptyPage(tid, dirtypages, BTreePageId.INTERNAL);
+
+		BTreeEntry entry = null;
+
+		while (it.hasNext() && moveCount < numEntries/2){
+			entry = it.next();
+			page.deleteKeyAndRightChild(entry);
+			newPage.insertEntry(entry);
+			moveCount++;
+		}
+		// 拿到要向上移动的key Field
+		entry = it.next();
+		page.deleteKeyAndRightChild(entry);
+		Field keyField = entry.getKey();
+		BTreeEntry keyEntry = new BTreeEntry(keyField,page.getId(), newPage.getId());
+
+		//拿到parent
+		BTreeInternalPage parentPage = getParentWithEmptySlots(tid, dirtypages, page.getParentId(), keyField);
+		parentPage.insertEntry(keyEntry);
+		updateParentPointers(tid,dirtypages,page);
+		updateParentPointers(tid,dirtypages,newPage);
+
+		dirtypages.put(page.getId(),page);
+		dirtypages.put(newPage.getId(),newPage);
+
+		if(field.compare(Op.LESS_THAN,keyField)){
+			return page;
+		}
+		return newPage;
 	}
 	
 	/**
