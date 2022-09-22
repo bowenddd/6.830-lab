@@ -305,7 +305,7 @@ public class BufferPool {
         throws DbException, IOException, TransactionAbortedException {
         // some code goes here
         // not necessary for lab1
-        HeapFile file = (HeapFile) Database.getCatalog().getDatabaseFile(tableId);
+        DbFile file = Database.getCatalog().getDatabaseFile(tableId);
         List<Page> pages = file.insertTuple(tid, t);
         for(Page page :pages){
             page.markDirty(true,tid);
@@ -314,7 +314,6 @@ public class BufferPool {
             pageIdSet.add(page.getId());
             this.dirtyPageIdMap.put(tid,pageIdSet);
             this.dirtyPageMap.put(page.getId(),page);
-            System.out.println(this.dirtyPageIdMap.toString());
         }
     }
 
@@ -337,8 +336,8 @@ public class BufferPool {
         // some code goes here
         // not necessary for lab1
         int tableId = t.getRecordId().getPageId().getTableId();
-        HeapFile file = (HeapFile) Database.getCatalog().getDatabaseFile(tableId);
-        ArrayList<Page> pages = file.deleteTuple(tid, t);
+        DbFile file = Database.getCatalog().getDatabaseFile(tableId);
+        List<Page> pages = file.deleteTuple(tid, t);
         for(Page page : pages){
             page.markDirty(true,tid);
             this.addOrUpdatePage(page);
@@ -403,7 +402,7 @@ public class BufferPool {
         // some code goes here
         // not necessary for lab1
         int tableId = pid.getTableId();
-        HeapFile file = (HeapFile) Database.getCatalog().getDatabaseFile(tableId);
+        DbFile file = Database.getCatalog().getDatabaseFile(tableId);
         Page page = this.dirtyPageMap.get(pid);
         if(page != null){
             file.writePage(page);
