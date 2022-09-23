@@ -437,3 +437,35 @@ BTreeHeaderPage和HeapPage中的header类似，它用来追踪BTreeFile正在使
 把这两个page放到dirtypage中
 
 将要向索引节点插入的key插入到索引节点中，如果索引节点已满，要分裂索引节点。
+
+### Exercise 3 4 
+
+这两个部分是在B+树删除tuple的时候用于对page中的索引或者tuple进行重新分配。
+
+当一个page中的tuple因删除小于总容量的一半的时候就需要对B+树中的节点进行重新分配。
+
+- 对于叶子节点来说，如果它的兄弟page中的tuple数量大于总容量的一半，那么将一个tuple
+  从兄弟page移到这个page中，并更新parent索引节点中的entry；否则，将两个page中的tuple
+  合并到一起，并删除parent索引节点中的entry。
+
+从上边可以看出，删除tuple可能导致索引page中entry的删除。同理，当一个索引page的tuple数量小于
+总容量的一半时也需要对其进行重新分配，其分配的策略与叶节点相似。
+
+对索引page的重新分配可能导致不断向上重新分配直到根节点
+
+索引page和叶节点重新分配的不同在于，叶节点重新分配时需要将一个副本加到索引page中，而索引page重新
+分配则不需要
+
+本实验中需要特别注意，在在合并叶节点两个page为一个page后，兄弟指针的修改逻辑。
+
+page->right = page->right->right
+
+同时不能忘记
+
+page->right->right->left = page
+
+最后nextKeyLockTest可以过。
+
+但是由于在上一个Lab中死锁检测偷懒使用超时策略BTreeDeadLockTest过不了。。。
+
+不打算改了 嘻嘻嘻 ^_^
