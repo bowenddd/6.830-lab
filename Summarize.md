@@ -469,3 +469,9 @@ page->right->right->left = page
 但是由于在上一个Lab中死锁检测偷懒使用超时策略BTreeDeadLockTest过不了。。。
 
 不打算改了 嘻嘻嘻 ^_^
+
+## Lab 6
+
+## Exercise 1 2
+
+但是今晚喝酒🍺喝多了有点晕，明天再总结ba'；。

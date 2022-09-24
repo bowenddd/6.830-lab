@@ -54,7 +54,7 @@ public class BufferPool {
 
     private ConcurrentHashMap<PageId,Page> dirtyPageMap;
 
-
+    private Map<PageId,Page>flushedBudNotCompletedPage;
 
     /**
      * Creates a BufferPool that caches up to numPages pages.
@@ -74,6 +74,7 @@ public class BufferPool {
         this.list = new LinkedList<>(null,null,0,numPages);
         this.dirtyPageIdMap = new ConcurrentHashMap<>();
         this.txPageLockMap = new ConcurrentHashMap<>();
+        this.flushedBudNotCompletedPage = new HashMap<>();
     }
     
     public static int getPageSize() {
@@ -234,6 +235,7 @@ public class BufferPool {
         List<Page> dataList = this.list.getDataList();
         for(Page p : dataList){
             if(tid.equals(p.isDirty())){
+                p.markDirty(true,tid);
                 this.dirtyPageMap.put(p.getId(),p);
             }
             Set<PageId> pageIds = this.dirtyPageIdMap.getOrDefault(tid,new HashSet<>());
@@ -254,7 +256,30 @@ public class BufferPool {
         // not necessary for lab1|lab2
         this.searchAndMarkDirtyPages(tid);
         if(commit){
-            this.flushPages(tid);
+            Set<PageId> pageIds = this.dirtyPageIdMap.get(tid);
+            if(pageIds == null){
+                return;
+            }
+            for(PageId pid : pageIds){
+                try {
+                    this.flushPage(pid);
+                    Page page = this.dirtyPageMap.get(pid);
+                    if(page == null){
+                        page = this.flushedBudNotCompletedPage.get(pid);
+                    }
+                    if(page != null){
+                        page.setBeforeImage();
+                        this.flushedBudNotCompletedPage.remove(pid);
+                    }
+
+
+                }catch (IOException e){
+                    e.printStackTrace();
+                }
+                this.dirtyPageMap.remove(pid);
+            }
+            pageIds.clear();
+            this.dirtyPageIdMap.remove(tid);
         }else{
             // 如果事务失败了，就把bufferpool中所有的脏的page替换为磁盘中的page
             Set<PageId> pageIds = this.dirtyPageIdMap.get(tid);
@@ -404,10 +429,20 @@ public class BufferPool {
         int tableId = pid.getTableId();
         DbFile file = Database.getCatalog().getDatabaseFile(tableId);
         Page page = this.dirtyPageMap.get(pid);
-        if(page != null){
-            file.writePage(page);
+        if (page == null){
+            page = flushedBudNotCompletedPage.get(pid);
         }
-        this.dirtyPageMap.remove(pid);
+        if(page != null){
+            TransactionId dirtier = page.isDirty();
+            if (dirtier != null){
+                Database.getLogFile().logWrite(dirtier, page.getBeforeImage(), page);
+                Database.getLogFile().force();
+            }
+            file.writePage(page);
+            this.flushedBudNotCompletedPage.put(pid,page);
+
+        }
+        //this.dirtyPageMap.remove(pid);
     }
 
     /** Write all pages of the specified transaction to disk.

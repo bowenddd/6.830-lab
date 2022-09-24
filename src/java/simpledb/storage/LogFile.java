@@ -5,6 +5,7 @@ import simpledb.common.Database;
 import simpledb.transaction.TransactionId;
 import simpledb.common.Debug;
 
+import javax.xml.crypto.Data;
 import java.io.*;
 import java.util.*;
 import java.lang.reflect.*;
@@ -159,7 +160,6 @@ public class LogFile {
                 // must do this here, since rollback only works for
                 // live transactions (needs tidToFirstLogRecord)
                 rollback(tid);
-
                 raf.writeInt(ABORT_RECORD);
                 raf.writeLong(tid.getId());
                 raf.writeLong(currentOffset);
@@ -460,6 +460,35 @@ public class LogFile {
             synchronized(this) {
                 preAppend();
                 // some code goes here
+                // 定位到这个transaction
+                Long tidLogs = tidToFirstLogRecord.get(tid.getId());
+                raf.seek(tidLogs);
+                // 然后是record信息
+                while(raf.getFilePointer()<raf.length()){
+                    int type = raf.readInt();
+                    long logTid = raf.readLong();
+                    if (type == BEGIN_RECORD || type == ABORT_RECORD || type == COMMIT_RECORD){
+                        raf.readLong();
+                        continue;
+                    }
+                    if (type == CHECKPOINT_RECORD){
+                        int numTransactions = raf.readInt();
+                        while (numTransactions-- > 0) {
+                            raf.readLong();
+                            raf.readLong();
+                        }
+                        raf.readLong();
+                        continue;
+                    }
+                    if (type == UPDATE_RECORD){
+                        Page page = readPageData(raf);
+                        if(logTid == tid.getId()){
+                            Database.getCatalog().getDatabaseFile(page.getId().getTableId()).writePage(page);
+                        }
+                        readPageData(raf);
+                        raf.readLong();   //这个是offset没用
+                    }
+                }
             }
         }
     }
@@ -487,6 +516,65 @@ public class LogFile {
             synchronized (this) {
                 recoveryUndecided = false;
                 // some code goes here
+                Map<Long,List<Page[]>> tidToPagesMap = new HashMap<>();
+                Set<Long>tidSet = new HashSet<>();
+                Set<Long> commitedSet = new HashSet<>();
+                raf.seek(0);
+                long cpidx = raf.readLong();
+                //if (cpidx > 0){
+                //    raf.seek(cpidx);
+                //}
+                while(raf.getFilePointer()<raf.length()){
+                    int type = raf.readInt();
+                    long logTid = raf.readLong();
+                    if (type == BEGIN_RECORD || type == ABORT_RECORD || type == COMMIT_RECORD){
+                        raf.readLong();
+                        tidSet.add(logTid);
+                        if (type == COMMIT_RECORD){
+                            commitedSet.add(logTid);
+                        }
+                        continue;
+                    }
+                    if (type == CHECKPOINT_RECORD){
+                        int numTransactions = raf.readInt();
+                        while (numTransactions-- > 0) {
+                            tidSet.add(raf.readLong());
+                            raf.readLong();
+                        }
+                        raf.readLong();
+                        continue;
+                    }
+                    if (type == UPDATE_RECORD){
+                        List<Page[]> list = tidToPagesMap.getOrDefault(logTid, new ArrayList<>());
+                        Page[] images = new Page[2];
+                        images[0] = readPageData(raf);
+                        //if(logTid == tid.getId()){
+                        //    Database.getCatalog().getDatabaseFile(page.getId().getTableId()).writePage(page);
+                        //}
+                        images[1] = readPageData(raf);
+                        list.add(images);
+                        tidToPagesMap.put(logTid,list);
+                        raf.readLong();   //这个是offset没用
+                    }
+                }
+                for(Long tid : tidSet){
+                    List<Page[]> pages = tidToPagesMap.get(tid);
+                    if (commitedSet.contains(tid)){
+                        if(pages != null){
+                            for(Page[] images : pages){
+                                Page page = images[1];
+                                Database.getCatalog().getDatabaseFile(page.getId().getTableId()).writePage(page);
+                            }
+                        }
+                    }else{
+                        if(pages != null){
+                            for(Page[] images : pages){
+                                Page page = images[0];
+                                Database.getCatalog().getDatabaseFile(page.getId().getTableId()).writePage(page);
+                            }
+                        }
+                    }
+                }
             }
          }
     }
