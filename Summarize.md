@@ -472,6 +472,50 @@ page->right->right->left = page
 
 ## Lab 6
 
-## Exercise 1 2
+这一部分是实现事务失败后的回滚，以及数据库崩溃后根据log来进行重做
 
-但是今晚喝酒🍺喝多了有点晕，明天再总结ba'；。
+在这一部分中加入了一个LogFile文件，日志中记录了每个事务的相关操作，
+
+log的类型一共有五种：
+- BEGIN 表示一个事务开始，log中记录了事务的id
+- COMMIT 表示事务成功提交，log中记录了事务的id
+- ABORT 表示事务中断，log中记录了事务的id
+- UPDATE RECORDS 记录事务对page的进行修改后（脏页），的before-image以及after-image
+  用于之后对事务进行redo或者undo
+- CHECKPOINT 检查点log中记录了当前仍然活跃的日志（即事务begin但是还没有提交或者abort）的第一个record的位置，
+
+⚠️注意： UPDATE RECORDS 日志是在 flushPage()方法中进行记录的，即在将脏页刷到disk之前，首先要将脏页的
+before-image和after-image记录到日志中，然后再调用file.writePage()方法，将脏页写入磁盘，这样可以保证
+每个对磁盘中进行修改的page都有对应的信息保存在log中，以便后续的redo和undo
+
+### Exercise 1 2
+
+Exercise 1 中实现rollback操作，即传入一个事务，该事务所有的操作都要撤销，即undo。
+
+这个比较简单，就是遍历log中的所有信息，找到这个事务修改的所有的page，然后将page的data设为
+before-image即可
+
+Exercise 2 中实现redo操作，即在数据库崩溃之后可以根据日志进行相关操作的修复。
+
+具体的逻辑是，从检查点开始，检查点之后已经commit的事务，我们要将它修改的所有page的
+数据设为它的after-image。而剩余未commit的事务，我们要将它修改的所有page的数据设为
+它的before-image
+
+⚠️注意：事务在提交时，在BufferPool.transactionComplete()需要对所有脏页进行刷盘，在
+刷盘完成后将page的before-image更新为当前的data。
+
+但是在测试中，有的测试代码中在调用BufferPool.transactionComplete()之前首先调用了
+BufferPool.flushAllPages()方法，调用这个方法将所有的脏页刷盘，并将dirtyPage从dirtyPageMap
+中移除，导致在BufferPool.transactionComplete()中无法从dirtyPageMap中拿到page，并设置before-image
+从而测试失败
+
+解决方案是在设置一个flushedButNotCompleteMap，用于记录虽然刷盘但是事务没提交的page。
+在BufferPool.flushAllPages()中每从dirtyPageMap中移除一个pageId，就将这个pageId
+加入到flushedButNotCompleteMap中。
+
+而在BufferPool.transactionComplete()中，如果无法从dirtyPageMap中拿到page，再去从
+flushedButNotCompleteMap拿page。同时在事务完成后，将page从flushedButNotCompleteMap删除
+
+---
+2022.9.25 10:46  6.830 LAB 完结 撒花🎉
+
